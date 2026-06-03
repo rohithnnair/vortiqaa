@@ -1,0 +1,80 @@
+@import "tailwindcss";
+
+@theme {
+  --color-vortiqaa-50: #f0f4ff;
+  --color-vortiqaa-100: #d9e2ff;
+  --color-vortiqaa-200: #bccaff;
+  --color-vortiqaa-300: #8da6ff;
+  --color-vortiqaa-400: #5476ff;
+  --color-vortiqaa-500: #2d4cff;
+  --color-vortiqaa-600: #1a2bff;
+  --color-vortiqaa-700: #1420eb;
+  --color-vortiqaa-800: #1119c4;
+  --color-vortiqaa-900: #131ca1;
+  --color-vortiqaa-950: #0b0f5e;
+  
+  --color-slate-950: #020617;
+}
+
+@layer base {
+  body {
+    @apply bg-slate-950 text-slate-50 font-sans antialiased selection:bg-vortiqaa-500/30 selection:text-vortiqaa-200;
+    margin: 0;
+    min-height: 100vh;
+  }
+}
+
+@layer components {
+  .glass-card {
+    @apply bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl shadow-2xl;
+  }
+  
+  .glass-sidebar {
+    @apply bg-black/40 backdrop-blur-2xl border-r border-white/5;
+  }
+
+  .btn-primary {
+    @apply relative overflow-hidden bg-vortiqaa-600 hover:bg-vortiqaa-500 text-white px-6 py-3 rounded-xl transition-all duration-300 flex items-center justify-center gap-2 shadow-[0_0_20px_rgba(45,76,255,0.3)] hover:shadow-[0_0_30px_rgba(45,76,255,0.5)];
+  }
+
+  .btn-secondary {
+    @apply bg-white/5 hover:bg-white/10 border border-white/10 text-white px-6 py-3 rounded-xl transition-all duration-300 flex items-center justify-center gap-2;
+  }
+
+  .gradient-text {
+    @apply bg-clip-text text-transparent bg-gradient-to-r from-vortiqaa-400 to-vortiqaa-100 font-bold;
+  }
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--color-slate-950);
+}
+
+::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--color-vortiqaa-900) 50%, transparent);
+  border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb, var(--color-vortiqaa-800) 50%, transparent);
+}
+
+.animate-in {
+  animation: fadeIn 0.5s ease-out;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}

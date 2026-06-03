@@ -1,0 +1,40 @@
+name: Build/Release
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  release:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18
+          cache: 'npm'
+
+      - name: Install Dependencies
+        run: npm install
+
+      - name: Build React App
+        run: npm run build
+
+      - name: Build/Release Electron App
+        uses: samuelmeuli/action-electron-builder@v1
+        with:
+          # GitHub token, automatically provided by the action
+          # (no need to create a custom secret)
+          github_token: ${{ secrets.github_token }}
+          
+          # If the commit is tagged with a version (e.g. "v1.0.0"), 
+          # release the app after building
+          release: ${{ startsWith(github.ref, 'refs/tags/v') }}
