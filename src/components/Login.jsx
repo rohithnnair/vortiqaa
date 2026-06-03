@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { signInWithEmailAndPassword } from 'firebase/auth';
 import { auth } from '../firebase';
 import { ShieldCheck, Lock, Mail, Eye, EyeOff, ArrowRight, Loader2 } from 'lucide-react';
+import logo from '../assets/logo.png';
 
 const Login = () => {
   const [email, setEmail] = useState('');
@@ -34,8 +35,8 @@ const Login = () => {
       <div className="w-full max-w-md animate-[fadeIn_0.5s_ease-out]">
         {/* Logo Section */}
         <div className="flex flex-col items-center mb-8">
-          <div className="w-16 h-16 bg-gradient-to-br from-indigo-500 to-blue-700 rounded-2xl flex items-center justify-center shadow-[0_0_30px_rgba(99,102,241,0.4)] mb-4">
-            <ShieldCheck size={32} className="text-white" />
+          <div className="w-16 h-16 rounded-2xl overflow-hidden shadow-[0_0_30px_rgba(99,102,241,0.4)] mb-4">
+             <img src={logo} alt="Vortiqaa Logo" className="w-full h-full object-cover" />
           </div>
           <h1 className="text-3xl font-extrabold tracking-tight text-white">Vortiqaa</h1>
           <p className="text-slate-500 text-sm uppercase tracking-widest font-semibold mt-1">Management System</p>

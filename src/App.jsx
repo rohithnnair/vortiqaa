@@ -11,6 +11,7 @@ import {
   X,
   ChevronRight
 } from 'lucide-react';
+import logo from './assets/logo.png';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { auth } from './firebase';
 import Dashboard from './components/Dashboard';
@@ -80,8 +81,8 @@ function App() {
         <div className="flex flex-col h-full p-5">
           {/* Logo */}
           <div className="flex items-center gap-3 mb-10 px-2 pt-2">
-            <div className="w-9 h-9 bg-gradient-to-br from-blue-400 to-indigo-700 rounded-xl flex items-center justify-center shadow-[0_0_20px_rgba(99,102,241,0.5)]">
-              <span className="text-lg font-black text-white">V</span>
+            <div className="w-10 h-10 rounded-xl overflow-hidden shadow-[0_0_20px_rgba(99,102,241,0.5)]">
+               <img src={logo} alt="Vortiqaa Logo" className="w-full h-full object-cover" />
             </div>
             <div>
               <h1 className="text-xl font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-blue-300 to-indigo-200">Vortiqaa</h1>

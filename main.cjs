@@ -1,5 +1,15 @@
 const { app, BrowserWindow } = require('electron');
 const path = require('path');
+const { autoUpdater } = require('electron-updater');
+
+// Auto-updater event listeners
+autoUpdater.on('update-available', () => {
+  console.log('Update available. Downloading...');
+});
+autoUpdater.on('update-downloaded', () => {
+  console.log('Update downloaded. Restarting app to apply update...');
+  autoUpdater.quitAndInstall();
+});
 
 function createWindow() {
   const win = new BrowserWindow({
@@ -25,6 +35,11 @@ function createWindow() {
 
 app.whenReady().then(() => {
   createWindow();
+
+  // Automatically check for updates if running in production mode
+  if (app.isPackaged) {
+    autoUpdater.checkForUpdatesAndNotify();
+  }
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {

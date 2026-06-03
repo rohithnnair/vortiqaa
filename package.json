@@ -2,6 +2,7 @@
   "name": "vortiqaa-technologies",
   "private": true,
   "version": "1.0.0",
+  "repository": "https://github.com/rohithnnair/vortiqaa",
   "description": "Premium Management System for Vortiqaa Technologies",
   "author": "Vortiqaa Technologies",
   "type": "module",
@@ -15,6 +16,7 @@
     "electron:build": "rimraf release && vite build && electron-builder"
   },
   "build": {
+    "publish": ["github"],
     "appId": "com.vortiqaa.management",
     "productName": "Vortiqaa Management",
     "win": {
@@ -33,6 +35,7 @@
   "dependencies": {
     "clsx": "^2.1.1",
     "date-fns": "^4.4.0",
+    "electron-updater": "^6.8.3",
     "firebase": "^12.14.0",
     "framer-motion": "^11.18.2",
     "lucide-react": "^0.453.0",
