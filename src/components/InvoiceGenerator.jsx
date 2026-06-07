@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { Plus, Trash2, Printer, Send, Download } from 'lucide-react';
 import { db } from '../firebase';
 import { collection, addDoc, serverTimestamp, getDoc, doc } from 'firebase/firestore';
+import html2pdf from 'html2pdf.js';
 
 const TAX_RATE = 18; // GST %
 
@@ -74,6 +75,18 @@ const InvoiceGenerator = () => {
 
   const handlePrint = () => window.print();
 
+  const handleDownload = () => {
+    const element = document.getElementById('invoice-print');
+    const opt = {
+      margin:       0.5,
+      filename:     `${form.invoiceNumber || 'Invoice'}.pdf`,
+      image:        { type: 'jpeg', quality: 0.98 },
+      html2canvas:  { scale: 2 },
+      jsPDF:        { unit: 'in', format: 'letter', orientation: 'portrait' }
+    };
+    html2pdf().set(opt).from(element).save();
+  };
+
   return (
     <div className="space-y-7 pb-20">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -82,6 +95,9 @@ const InvoiceGenerator = () => {
           <p className="text-slate-500 text-sm mt-0.5">Create and send professional invoices instantly.</p>
         </div>
         <div className="flex gap-2">
+          <button onClick={handleDownload} className="flex items-center gap-1.5 bg-white/5 hover:bg-white/10 border border-white/10 text-white px-4 py-2.5 rounded-xl text-sm font-medium transition-all">
+            <Download size={15} /> Download PDF
+          </button>
           <button onClick={handlePrint} className="flex items-center gap-1.5 bg-white/5 hover:bg-white/10 border border-white/10 text-white px-4 py-2.5 rounded-xl text-sm font-medium transition-all">
             <Printer size={15} /> Print
           </button>
