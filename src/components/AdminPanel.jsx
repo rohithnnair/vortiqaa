@@ -7,7 +7,7 @@ import {
 import { db } from '../firebase';
 import {
   collection, getDocs, doc, updateDoc, deleteDoc,
-  query, orderBy, addDoc, serverTimestamp, setDoc
+  query, orderBy, addDoc, serverTimestamp, setDoc, getDoc
 } from 'firebase/firestore';
 
 const statusStyle = {
@@ -61,7 +61,7 @@ const AdminPanel = () => {
     name: 'Vortiqaa Technologies', email: 'contact@vortiqaa.com',
     phone: '+91 98765 43210', address: '123 Tech Street, Bengaluru, Karnataka - 560001',
     gstin: '', website: 'www.vortiqaa.com',
-    bankName: '', accountNumber: '', ifsc: '', upiId: '',
+    bankName: '', accountNumber: '', ifsc: '', upiId: '', logoBase64: ''
   });
   const setC = (k, v) => setCompany(c => ({ ...c, [k]: v }));
 
@@ -79,9 +79,16 @@ const AdminPanel = () => {
     setAdmins(snap.docs.map(d => ({ id: d.id, ...d.data() })));
   };
 
+  const fetchCompanySettings = async () => {
+    const docSnap = await getDoc(doc(db, 'settings', 'company'));
+    if (docSnap.exists()) {
+      setCompany(prev => ({ ...prev, ...docSnap.data() }));
+    }
+  };
+
   const refresh = useCallback(async () => {
     setLoading(true);
-    try { await Promise.all([fetchInvoices(), fetchProposals(), fetchAdmins()]); }
+    try { await Promise.all([fetchInvoices(), fetchProposals(), fetchAdmins(), fetchCompanySettings()]); }
     catch (e) { console.error(e); }
     finally { setLoading(false); }
   }, []);
@@ -127,6 +134,15 @@ const AdminPanel = () => {
       alert('Company settings saved to Firebase!');
     } catch (e) { console.error(e); alert('Error: ' + e.message); }
     finally { setSaving(false); }
+  };
+
+  const handleLogoUpload = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => setC('logoBase64', reader.result);
+      reader.readAsDataURL(file);
+    }
   };
 
   /* ── Derived stats ── */
@@ -370,6 +386,12 @@ const AdminPanel = () => {
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           <div className="bg-white/5 border border-white/10 rounded-2xl p-6 space-y-4">
             <SectionTitle>Company Information</SectionTitle>
+            <Field label="Company Logo">
+              <div className="flex items-center gap-4">
+                {company.logoBase64 && <img src={company.logoBase64} alt="Logo" className="w-12 h-12 object-contain bg-white/10 rounded-xl" />}
+                <input type="file" accept="image/*" onChange={handleLogoUpload} className="text-sm text-slate-400 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-sm file:font-semibold file:bg-indigo-500/10 file:text-indigo-400 hover:file:bg-indigo-500/20" />
+              </div>
+            </Field>
             {[
               {label:'Company Name',  key:'name'},
               {label:'Email',         key:'email'},

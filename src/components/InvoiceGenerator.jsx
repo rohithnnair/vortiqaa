@@ -1,7 +1,7 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { Plus, Trash2, Printer, Send, Download } from 'lucide-react';
 import { db } from '../firebase';
-import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
+import { collection, addDoc, serverTimestamp, getDoc, doc } from 'firebase/firestore';
 
 const TAX_RATE = 18; // GST %
 
@@ -9,6 +9,18 @@ const InvoiceGenerator = () => {
   const [saving, setSaving] = useState(false);
   const [savedId, setSavedId] = useState(null);
   const printRef = useRef();
+
+  const [company, setCompany] = useState({ name: 'Vortiqaa Technologies', email: 'contact@vortiqaa.com', phone: '+91 XXX XXX XXXX', logoBase64: '', gstin: '' });
+
+  useEffect(() => {
+    const fetchCompany = async () => {
+      try {
+        const docSnap = await getDoc(doc(db, 'settings', 'company'));
+        if (docSnap.exists()) setCompany(docSnap.data());
+      } catch (err) {}
+    };
+    fetchCompany();
+  }, []);
 
   const [form, setForm] = useState({
     invoiceNumber: `INV-${Date.now().toString().slice(-5)}`,
@@ -213,10 +225,16 @@ const InvoiceGenerator = () => {
             {/* Header bar */}
             <div className="bg-indigo-700 px-8 py-6 flex items-center justify-between">
               <div className="flex items-center gap-3">
-                <div className="w-9 h-9 bg-white/20 rounded-xl flex items-center justify-center text-white font-black text-lg">V</div>
+                {company.logoBase64 ? (
+                  <img src={company.logoBase64} alt="Company Logo" className="w-12 h-12 object-contain bg-white rounded-xl p-1" />
+                ) : (
+                  <div className="w-9 h-9 bg-white/20 rounded-xl flex items-center justify-center text-white font-black text-lg">
+                    {company.name ? company.name.charAt(0).toUpperCase() : 'V'}
+                  </div>
+                )}
                 <div>
-                  <p className="text-white font-bold text-lg leading-tight">Vortiqaa</p>
-                  <p className="text-indigo-200 text-[10px] uppercase tracking-widest">Technologies</p>
+                  <p className="text-white font-bold text-lg leading-tight">{company.name}</p>
+                  {company.gstin && <p className="text-indigo-200 text-[10px] uppercase tracking-widest">GSTIN: {company.gstin}</p>}
                 </div>
               </div>
               <div className="text-right">
@@ -299,8 +317,18 @@ const InvoiceGenerator = () => {
                 </div>
               )}
 
+              {/* Terms & Conditions */}
+              <div className="mt-4 bg-slate-50 border border-slate-100 rounded-xl p-4">
+                <p className="text-[10px] font-bold text-indigo-400 uppercase tracking-wider mb-1.5">Terms & Conditions</p>
+                <ul className="list-disc pl-4 text-[11px] text-slate-600 space-y-1 font-medium">
+                  <li>Maintenance of the app or website costs as per the features.</li>
+                  <li>Technical issues faced in the app will be fixed for free.</li>
+                  <li>Dedicated customer service and implementation of new ideas are included.</li>
+                </ul>
+              </div>
+
               <div className="mt-8 text-center text-[9px] text-slate-400 uppercase tracking-[0.25em] font-bold">
-                Vortiqaa Technologies · contact@vortiqaa.com · +91 XXX XXX XXXX
+                {company.name} · {company.email} · {company.phone}
               </div>
             </div>
           </div>

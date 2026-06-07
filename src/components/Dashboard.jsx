@@ -1,19 +1,7 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { TrendingUp, Users, FileCheck, Clock, ArrowUpRight, Plus } from 'lucide-react';
-
-const stats = [
-  { name: 'Total Revenue', value: '₹0', icon: TrendingUp, trend: '+0%', color: 'text-emerald-400', bg: 'bg-emerald-500/10' },
-  { name: 'Active Clients', value: '0', icon: Users, trend: '+0', color: 'text-blue-400', bg: 'bg-blue-500/10' },
-  { name: 'Invoices Paid', value: '0', icon: FileCheck, trend: '+0', color: 'text-indigo-400', bg: 'bg-indigo-500/10' },
-  { name: 'Pending Proposals', value: '0', icon: Clock, trend: '0', color: 'text-amber-400', bg: 'bg-amber-500/10' },
-];
-
-const recentInvoices = [
-  { id: 'INV-001', client: 'Acme Corp', project: 'Web App', amount: '₹42,000', status: 'Paid', date: 'Jun 1, 2026' },
-  { id: 'INV-002', client: 'Nexus Systems', project: 'Mobile App', amount: '₹18,000', status: 'Pending', date: 'Jun 2, 2026' },
-  { id: 'INV-003', client: 'Global Tech', project: 'E-Commerce', amount: '₹35,000', status: 'Paid', date: 'Jun 3, 2026' },
-  { id: 'INV-004', client: 'Nova Labs', project: 'Landing Page', amount: '₹9,500', status: 'Draft', date: 'Jun 3, 2026' },
-];
+import { db } from '../firebase';
+import { collection, query, orderBy, getDocs } from 'firebase/firestore';
 
 const statusStyle = {
   Paid: 'bg-emerald-500/15 text-emerald-400',
@@ -22,6 +10,43 @@ const statusStyle = {
 };
 
 const Dashboard = ({ setActiveTab }) => {
+  const [invoices, setInvoices] = useState([]);
+
+  useEffect(() => {
+    const fetchInvoices = async () => {
+      try {
+        const q = query(collection(db, 'invoices'), orderBy('createdAt', 'desc'));
+        const snap = await getDocs(q);
+        setInvoices(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+      } catch (error) {
+        console.error('Error fetching invoices:', error);
+      }
+    };
+    fetchInvoices();
+  }, []);
+
+  const totalRevenue = invoices.filter(i => i.status === 'Paid').reduce((s, i) => s + (i.total || 0), 0);
+  const activeClientsCount = new Set(invoices.map(i => i.clientName).filter(Boolean)).size;
+  const invoicesPaidCount = invoices.filter(i => i.status === 'Paid').length;
+  // Use pending invoices as a proxy for pending stats here
+  const pendingCount = invoices.filter(i => i.status === 'Pending').length;
+
+  const stats = [
+    { name: 'Total Revenue', value: `₹${totalRevenue.toLocaleString('en-IN')}`, icon: TrendingUp, trend: '', color: 'text-emerald-400', bg: 'bg-emerald-500/10' },
+    { name: 'Active Clients', value: activeClientsCount.toString(), icon: Users, trend: '', color: 'text-blue-400', bg: 'bg-blue-500/10' },
+    { name: 'Invoices Paid', value: invoicesPaidCount.toString(), icon: FileCheck, trend: '', color: 'text-indigo-400', bg: 'bg-indigo-500/10' },
+    { name: 'Pending Invoices', value: pendingCount.toString(), icon: Clock, trend: '', color: 'text-amber-400', bg: 'bg-amber-500/10' },
+  ];
+
+  const recentInvoices = invoices.slice(0, 4).map(inv => ({
+    id: inv.invoiceNumber || inv.id.slice(0, 7),
+    client: inv.clientName || 'Unknown',
+    project: inv.projectType || 'Project',
+    amount: `₹${(inv.total || 0).toLocaleString('en-IN')}`,
+    status: inv.status || 'Draft',
+    date: inv.invoiceDate || 'N/A'
+  }));
+
   return (
     <div className="space-y-8 animate-[fadeIn_0.4s_ease-out]">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
