@@ -1,22 +1,47 @@
 const { app, BrowserWindow, dialog } = require('electron');
 const path = require('path');
 const { autoUpdater } = require('electron-updater');
+const log = require('electron-log');
 
-// Auto-updater configuration - silent mode to avoid error dialogs
+// Silence all auto-updater logs and suppress dialogs completely
+autoUpdater.logger = log;
+autoUpdater.logger.transports.file.level = 'info';
 autoUpdater.autoDownload = false;
-autoUpdater.logger = null;
+autoUpdater.autoInstallOnAppQuit = false;
 
-// Auto-updater event listeners
-autoUpdater.on('update-available', () => {
-  console.log('Update available.');
-});
-autoUpdater.on('update-downloaded', () => {
-  console.log('Update downloaded. Restarting app to apply update...');
-  autoUpdater.quitAndInstall();
-});
+// Suppress all error dialogs from electron-updater
 autoUpdater.on('error', (err) => {
-  // Silently log - do not show error dialog to user
-  console.error('Auto-update error (silent):', err.message);
+  log.error('Auto-update error (silent):', err.message);
+  // Do NOT show dialog — silently fail
+});
+
+autoUpdater.on('update-available', (info) => {
+  log.info('Update available:', info.version);
+  dialog.showMessageBox({
+    type: 'info',
+    title: 'Update Available',
+    message: `Version ${info.version} is available. It will be downloaded in the background.`,
+    buttons: ['OK']
+  });
+  autoUpdater.downloadUpdate();
+});
+
+autoUpdater.on('update-downloaded', () => {
+  log.info('Update downloaded. Will install on next restart.');
+  dialog.showMessageBox({
+    type: 'info',
+    title: 'Update Ready',
+    message: 'A new update has been downloaded. Restart the app to apply it.',
+    buttons: ['Restart Now', 'Later']
+  }).then(({ response }) => {
+    if (response === 0) {
+      autoUpdater.quitAndInstall();
+    }
+  });
+});
+
+autoUpdater.on('update-not-available', () => {
+  log.info('App is up to date.');
 });
 
 function createWindow() {
@@ -44,15 +69,14 @@ function createWindow() {
 app.whenReady().then(() => {
   createWindow();
 
-  // Automatically check for updates if running in production mode
+  // Check for updates silently in production — errors are suppressed
   if (app.isPackaged) {
-    try {
+    // Delay check by 3 seconds to let the window load first
+    setTimeout(() => {
       autoUpdater.checkForUpdates().catch((err) => {
-        console.error('Update check failed (silent):', err.message);
+        log.error('Update check failed (silent):', err.message);
       });
-    } catch (err) {
-      console.error('Update check error (silent):', err.message);
-    }
+    }, 3000);
   }
 
   app.on('activate', () => {
