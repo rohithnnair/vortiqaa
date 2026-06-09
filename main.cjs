@@ -1,5 +1,6 @@
-const { app, BrowserWindow, dialog } = require('electron');
+const { app, BrowserWindow, dialog, ipcMain } = require('electron');
 const path = require('path');
+const fs   = require('fs');
 const { autoUpdater } = require('electron-updater');
 const log = require('electron-log');
 
@@ -89,5 +90,23 @@ app.whenReady().then(() => {
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
     app.quit();
+  }
+});
+
+/* ── PDF export — uses Chromium's native renderer, no html2canvas hang ── */
+ipcMain.handle('save-pdf', async (event, filename) => {
+  const win = BrowserWindow.fromWebContents(event.sender);
+  try {
+    const pdfBuffer = await win.webContents.printToPDF({
+      printBackground: true,
+      pageSize: 'A4',
+      margins: { marginType: 'custom', top: 0.4, bottom: 0.4, left: 0.4, right: 0.4 },
+    });
+    const savePath = path.join(app.getPath('downloads'), filename);
+    fs.writeFileSync(savePath, pdfBuffer);
+    return { success: true, path: savePath };
+  } catch (e) {
+    log.error('save-pdf error:', e.message);
+    return { success: false, error: e.message };
   }
 });

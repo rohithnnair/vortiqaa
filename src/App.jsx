@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, lazy, Suspense } from 'react';
 import {
   LayoutDashboard,
   FileText,
@@ -14,11 +14,19 @@ import {
 import logo from './assets/logo.png';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { auth } from './firebase';
-import Dashboard from './components/Dashboard';
-import InvoiceGenerator from './components/InvoiceGenerator';
-import ProposalBuilder from './components/ProposalBuilder';
-import AdminPanel from './components/AdminPanel';
 import Login from './components/Login';
+
+/* Heavy components load only when their tab is first visited */
+const Dashboard        = lazy(() => import('./components/Dashboard'));
+const InvoiceGenerator = lazy(() => import('./components/InvoiceGenerator'));
+const ProposalBuilder  = lazy(() => import('./components/ProposalBuilder'));
+const AdminPanel       = lazy(() => import('./components/AdminPanel'));
+
+const TabSpinner = () => (
+  <div className="flex items-center justify-center h-64">
+    <div className="w-8 h-8 border-4 border-indigo-500/20 border-t-indigo-500 rounded-full animate-spin" />
+  </div>
+);
 
 const navigation = [
   { id: 'dashboard', name: 'Dashboard', icon: LayoutDashboard },
@@ -167,10 +175,12 @@ function App() {
 
         {/* Page Content */}
         <main className="flex-1 overflow-y-auto p-5 md:p-7 max-w-7xl w-full mx-auto">
-          {activeTab === 'dashboard' && <Dashboard setActiveTab={setActiveTab} />}
-          {activeTab === 'invoices' && <InvoiceGenerator />}
-          {activeTab === 'proposals' && <ProposalBuilder />}
-          {activeTab === 'admin' && <AdminPanel />}
+          <Suspense fallback={<TabSpinner />}>
+            {activeTab === 'dashboard'  && <Dashboard setActiveTab={setActiveTab} />}
+            {activeTab === 'invoices'   && <InvoiceGenerator />}
+            {activeTab === 'proposals'  && <ProposalBuilder />}
+            {activeTab === 'admin'      && <AdminPanel />}
+          </Suspense>
         </main>
       </div>
     </div>

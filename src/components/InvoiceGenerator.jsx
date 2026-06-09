@@ -2,7 +2,6 @@ import React, { useState, useRef, useEffect } from 'react';
 import { Plus, Trash2, Printer, Send, Download } from 'lucide-react';
 import { db } from '../firebase';
 import { collection, addDoc, serverTimestamp, getDoc, doc } from 'firebase/firestore';
-import html2pdf from 'html2pdf.js';
 
 const TAX_RATE = 18; // GST %
 
@@ -30,8 +29,9 @@ const VortiqaaSeal = () => (
 );
 
 const InvoiceGenerator = () => {
-  const [saving, setSaving] = useState(false);
-  const [savedId, setSavedId] = useState(null);
+  const [saving, setSaving]       = useState(false);
+  const [savedId, setSavedId]     = useState(null);
+  const [downloading, setDownloading] = useState(false);
   const printRef = useRef();
 
   const [company, setCompany] = useState({ name: 'Vortiqaa Technologies', email: 'contact@vortiqaa.com', phone: '+91 XXX XXX XXXX', logoBase64: '', gstin: '' });
@@ -99,19 +99,28 @@ const InvoiceGenerator = () => {
   const handlePrint = () => window.print();
 
   const handleDownload = async () => {
-    const element = document.getElementById('invoice-print');
-    if (!element) return alert('Invoice preview not found.');
+    if (downloading) return;
+    setDownloading(true);
     try {
-      await html2pdf().set({
-        margin:      0.5,
-        filename:    `${form.invoiceNumber || 'Invoice'}.pdf`,
-        image:       { type: 'jpeg', quality: 0.98 },
-        html2canvas: { scale: 2, useCORS: true, allowTaint: true, logging: false },
-        jsPDF:       { unit: 'in', format: 'letter', orientation: 'portrait' },
-      }).from(element).save();
+      /* Electron: use native printToPDF — no html2canvas, no hanging */
+      if (window.electronAPI?.savePDF) {
+        const result = await window.electronAPI.savePDF(
+          `${form.invoiceNumber || 'Invoice'}.pdf`
+        );
+        if (result.success) {
+          alert(`PDF saved to Downloads:\n${result.path}`);
+        } else if (!result.canceled) {
+          alert('PDF save failed: ' + (result.error || 'Unknown error'));
+        }
+      } else {
+        /* Browser fallback */
+        window.print();
+      }
     } catch (e) {
-      console.error('PDF generation failed:', e);
-      alert('PDF download failed. Please try the Print button instead.');
+      console.error('PDF download error:', e);
+      alert('PDF save failed. Use the Print button (Ctrl+P) as a workaround.');
+    } finally {
+      setDownloading(false);
     }
   };
 
@@ -123,8 +132,9 @@ const InvoiceGenerator = () => {
           <p className="text-slate-500 text-sm mt-0.5">Create and send professional invoices instantly.</p>
         </div>
         <div className="flex gap-2">
-          <button onClick={handleDownload} className="flex items-center gap-1.5 bg-white/5 hover:bg-white/10 border border-white/10 text-white px-4 py-2.5 rounded-xl text-sm font-medium transition-all">
-            <Download size={15} /> Download PDF
+          <button onClick={handleDownload} disabled={downloading}
+            className="flex items-center gap-1.5 bg-white/5 hover:bg-white/10 border border-white/10 text-white px-4 py-2.5 rounded-xl text-sm font-medium transition-all disabled:opacity-60 disabled:cursor-not-allowed">
+            <Download size={15} /> {downloading ? 'Saving…' : 'Download PDF'}
           </button>
           <button onClick={handlePrint} className="flex items-center gap-1.5 bg-white/5 hover:bg-white/10 border border-white/10 text-white px-4 py-2.5 rounded-xl text-sm font-medium transition-all">
             <Printer size={15} /> Print
@@ -384,8 +394,16 @@ const InvoiceGenerator = () => {
 
       <style>{`
         @media print {
-          body > * { display: none !important; }
-          #invoice-print { display: block !important; position: fixed; top: 0; left: 0; width: 100%; }
+          body * { visibility: hidden !important; }
+          #invoice-print, #invoice-print * { visibility: visible !important; }
+          #invoice-print {
+            position: fixed !important;
+            inset: 0 !important;
+            width: 100% !important;
+            background: white !important;
+            border-radius: 0 !important;
+            box-shadow: none !important;
+          }
         }
       `}</style>
     </div>

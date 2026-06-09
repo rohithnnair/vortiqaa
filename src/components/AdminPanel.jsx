@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import {
   ShieldCheck, Users, FileText, Lightbulb, Trash2, RefreshCw,
   CheckCircle, Clock, FileEdit, Settings, Database, Plus, X,
@@ -10,7 +11,6 @@ import {
   collection, getDocs, doc, updateDoc, deleteDoc,
   query, orderBy, addDoc, serverTimestamp, setDoc, getDoc
 } from 'firebase/firestore';
-import html2pdf from 'html2pdf.js';
 
 const statusStyle = {
   Paid:    'bg-emerald-500/15 text-emerald-400',
@@ -71,7 +71,8 @@ const Tab = ({ active, onClick, icon: Icon, label }) => (
 /* ═══════════════════════════════════════════════════════════════════ */
 const InvoiceEditModal = ({ invoice, company, onClose, onSaved }) => {
   const [form, setForm] = useState({ ...invoice });
-  const [saving, setSaving] = useState(false);
+  const [saving, setSaving]         = useState(false);
+  const [downloading, setDownloading] = useState(false);
   const [activePane, setActivePane] = useState('edit'); // 'edit' | 'preview'
 
   const setField = (key, val) => setForm(f => ({ ...f, [key]: val }));
@@ -109,19 +110,31 @@ const InvoiceEditModal = ({ invoice, company, onClose, onSaved }) => {
   };
 
   const handleDownload = async () => {
-    const element = document.getElementById('edit-invoice-print');
-    if (!element) return;
+    if (downloading) return;
+    setDownloading(true);
+    /* Inject visibility-based print CSS so Electron's printToPDF captures
+       only the invoice preview, regardless of modal nesting depth. */
+    const style = document.createElement('style');
+    style.id = '__modal-print-css';
+    style.textContent = `@media print{body *{visibility:hidden!important}#edit-invoice-print,#edit-invoice-print *{visibility:visible!important}#edit-invoice-print{position:fixed!important;inset:0!important;width:100%!important;background:white!important;border-radius:0!important;box-shadow:none!important;overflow:visible!important}}`;
+    document.head.appendChild(style);
     try {
-      await html2pdf().set({
-        margin:      0.5,
-        filename:    `${form.invoiceNumber || 'Invoice'}.pdf`,
-        image:       { type: 'jpeg', quality: 0.98 },
-        html2canvas: { scale: 2, useCORS: true, allowTaint: true, logging: false },
-        jsPDF:       { unit: 'in', format: 'letter', orientation: 'portrait' },
-      }).from(element).save();
+      if (window.electronAPI?.savePDF) {
+        const result = await window.electronAPI.savePDF(`${form.invoiceNumber || 'Invoice'}.pdf`);
+        if (result.success) {
+          alert(`PDF saved to Downloads:\n${result.path}`);
+        } else if (!result.canceled) {
+          alert('PDF save failed: ' + (result.error || 'Unknown'));
+        }
+      } else {
+        window.print();
+      }
     } catch (e) {
-      console.error('PDF generation failed:', e);
-      alert('PDF download failed. Please try again.');
+      console.error('PDF download error:', e);
+      alert('PDF save failed.');
+    } finally {
+      document.getElementById('__modal-print-css')?.remove();
+      setDownloading(false);
     }
   };
 
@@ -160,9 +173,9 @@ const InvoiceEditModal = ({ invoice, company, onClose, onSaved }) => {
           </div>
 
           <div className="flex items-center gap-2">
-            <button onClick={handleDownload}
-              className="flex items-center gap-1.5 bg-white/5 hover:bg-white/10 border border-white/10 text-white px-4 py-2 rounded-xl text-sm font-medium transition-all">
-              <Download size={14} /> Download PDF
+            <button onClick={handleDownload} disabled={downloading}
+              className="flex items-center gap-1.5 bg-white/5 hover:bg-white/10 border border-white/10 text-white px-4 py-2 rounded-xl text-sm font-medium transition-all disabled:opacity-60 disabled:cursor-not-allowed">
+              <Download size={14} /> {downloading ? 'Saving…' : 'Download PDF'}
             </button>
             <button onClick={handleSave} disabled={saving}
               className="flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-500 text-white px-5 py-2 rounded-xl text-sm font-semibold transition-all shadow-[0_0_20px_rgba(99,102,241,0.3)] disabled:opacity-60">
@@ -502,19 +515,37 @@ const AdminPanel = () => {
   useEffect(() => {
     if (!downloadingInvoice) return;
     setDlLoading(true);
-    const timer = setTimeout(() => {
-      const el = document.getElementById('admin-dl-invoice');
-      if (!el) { setDownloadingInvoice(null); setDlLoading(false); return; }
-      html2pdf().set({
-        margin:      0.5,
-        filename:    `${downloadingInvoice.invoiceNumber || 'Invoice'}.pdf`,
-        image:       { type: 'jpeg', quality: 0.98 },
-        html2canvas: { scale: 2, useCORS: true, allowTaint: true, logging: false },
-        jsPDF:       { unit: 'in', format: 'letter', orientation: 'portrait' },
-      }).from(el).save()
-        .then(() => { setDownloadingInvoice(null); setDlLoading(false); })
-        .catch(e => { console.error(e); setDownloadingInvoice(null); setDlLoading(false); alert('PDF download failed.'); });
-    }, 250);
+
+    // React has painted the portal into the DOM by now; give the browser one
+    // tick to finish layout before printToPDF captures the page.
+    const timer = setTimeout(async () => {
+      const style = document.createElement('style');
+      style.id = '__row-print-css';
+      style.textContent = `@media print{body *{visibility:hidden!important}[data-vq-print],[data-vq-print] *{visibility:visible!important}[data-vq-print]{position:fixed!important;inset:0!important;width:100%!important;background:white!important}}`;
+      document.head.appendChild(style);
+      try {
+        if (window.electronAPI?.savePDF) {
+          const result = await window.electronAPI.savePDF(
+            `${downloadingInvoice.invoiceNumber || 'Invoice'}.pdf`
+          );
+          if (result.success) {
+            alert(`PDF saved to Downloads:\n${result.path}`);
+          } else if (!result.canceled) {
+            alert('PDF save failed: ' + (result.error || 'Unknown'));
+          }
+        } else {
+          window.print();
+        }
+      } catch (e) {
+        console.error('Row PDF error:', e);
+        alert('PDF save failed.');
+      } finally {
+        document.getElementById('__row-print-css')?.remove();
+        setDownloadingInvoice(null);
+        setDlLoading(false);
+      }
+    }, 150);
+
     return () => clearTimeout(timer);
   }, [downloadingInvoice]);
 
@@ -878,16 +909,18 @@ const AdminPanel = () => {
         </div>
       )}
 
-      {/* ═══ HIDDEN INVOICE RENDER FOR DIRECT PDF DOWNLOAD ═══ */}
-      {downloadingInvoice && (() => {
+      {/* ═══ PORTAL INVOICE RENDER FOR DIRECT PDF DOWNLOAD ═══
+          Rendered into document.body so the visibility print CSS works. ═══ */}
+      {downloadingInvoice && createPortal((() => {
         const inv = downloadingInvoice;
         const items = inv.items || [];
         const sub = items.reduce((s, it) => s + (it.quantity || 1) * Number(it.rate || 0), 0);
         const tx  = (sub * (inv.taxRate ?? 18)) / 100;
         const tot = sub + tx;
         return (
-          <div style={{ position: 'fixed', left: '-9999px', top: 0, width: '850px', zIndex: -1 }}>
-            <div id="admin-dl-invoice" className="bg-white text-slate-900 overflow-hidden">
+          /* Off-screen in normal view; printToPDF reveals it via visibility CSS */
+          <div data-vq-print="1" style={{ position: 'fixed', top: '-9999vh', left: 0, width: '850px', background: 'white' }}>
+            <div className="bg-white text-slate-900 overflow-hidden">
               {/* Header */}
               <div className="bg-indigo-700 px-8 py-6 flex items-center justify-between">
                 <div className="flex items-center gap-3">
@@ -972,7 +1005,7 @@ const AdminPanel = () => {
             </div>
           </div>
         );
-      })()}
+      })(), document.body)}
 
       {/* ═══ INVOICE EDIT MODAL ═══ */}
       {editingInvoice && (
