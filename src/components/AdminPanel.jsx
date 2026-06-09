@@ -2,13 +2,15 @@ import React, { useState, useEffect, useCallback } from 'react';
 import {
   ShieldCheck, Users, FileText, Lightbulb, Trash2, RefreshCw,
   CheckCircle, Clock, FileEdit, Settings, Database, Plus, X,
-  UserPlus, Save, Building2, CreditCard, Eye, EyeOff
+  UserPlus, Save, Building2, CreditCard, Eye, EyeOff, Download,
+  Printer, Send
 } from 'lucide-react';
 import { db } from '../firebase';
 import {
   collection, getDocs, doc, updateDoc, deleteDoc,
   query, orderBy, addDoc, serverTimestamp, setDoc, getDoc
 } from 'firebase/firestore';
+import html2pdf from 'html2pdf.js';
 
 const statusStyle = {
   Paid:    'bg-emerald-500/15 text-emerald-400',
@@ -16,6 +18,29 @@ const statusStyle = {
   Draft:   'bg-slate-500/15 text-slate-400',
   Sent:    'bg-blue-500/15 text-blue-400',
 };
+
+/* ── Vortiqaa Official Seal ── */
+const VortiqaaSeal = () => (
+  <svg width="88" height="88" viewBox="0 0 88 88" xmlns="http://www.w3.org/2000/svg">
+    <circle cx="44" cy="44" r="41" fill="none" stroke="#4338ca" strokeWidth="2"/>
+    <circle cx="44" cy="44" r="35" fill="none" stroke="#4338ca" strokeWidth="0.75"/>
+    <circle cx="44" cy="44" r="26" fill="none" stroke="#4338ca" strokeWidth="0.75" strokeDasharray="2 2"/>
+    {[...Array(24)].map((_, i) => {
+      const a = (i / 24) * 2 * Math.PI;
+      const big = i % 6 === 0;
+      return (
+        <line key={i}
+          x1={44 + (big ? 35.5 : 36.5) * Math.cos(a)} y1={44 + (big ? 35.5 : 36.5) * Math.sin(a)}
+          x2={44 + (big ? 40.5 : 39.5) * Math.cos(a)} y2={44 + (big ? 40.5 : 39.5) * Math.sin(a)}
+          stroke="#4338ca" strokeWidth={big ? 2 : 1}/>
+      );
+    })}
+    <text x="44" y="30" textAnchor="middle" fill="#4338ca" fontSize="6.5" fontWeight="700" fontFamily="Arial,sans-serif" letterSpacing="1.5">VORTIQAA</text>
+    <text x="44" y="38" textAnchor="middle" fill="#4338ca" fontSize="5.8" fontWeight="600" fontFamily="Arial,sans-serif" letterSpacing="0.5">TECHNOLOGIES</text>
+    <text x="44" y="55" textAnchor="middle" fill="#4338ca" fontSize="20" fontWeight="900" fontFamily="Arial,sans-serif">V</text>
+    <text x="44" y="65" textAnchor="middle" fill="#4338ca" fontSize="5.8" fontWeight="700" fontFamily="Arial,sans-serif" letterSpacing="3">VERIFIED</text>
+  </svg>
+);
 
 /* ─── Small helpers ─── */
 const SectionTitle = ({ children }) => (
@@ -29,7 +54,8 @@ const Field = ({ label, children }) => (
   </div>
 );
 
-const input = "w-full bg-slate-900/60 border border-white/10 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-indigo-500 transition-all";
+const inp = "w-full bg-slate-900/60 border border-white/10 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-indigo-500 transition-all";
+const inpWhite = "w-full bg-slate-100 border border-slate-200 rounded-xl px-4 py-2.5 text-sm text-slate-800 focus:outline-none focus:border-indigo-500 transition-all";
 
 const Tab = ({ active, onClick, icon: Icon, label }) => (
   <button onClick={onClick}
@@ -41,6 +67,380 @@ const Tab = ({ active, onClick, icon: Icon, label }) => (
 );
 
 /* ═══════════════════════════════════════════════════════════════════ */
+/* Invoice Edit Modal                                                  */
+/* ═══════════════════════════════════════════════════════════════════ */
+const InvoiceEditModal = ({ invoice, company, onClose, onSaved }) => {
+  const [form, setForm] = useState({ ...invoice });
+  const [saving, setSaving] = useState(false);
+  const [activePane, setActivePane] = useState('edit'); // 'edit' | 'preview'
+
+  const setField = (key, val) => setForm(f => ({ ...f, [key]: val }));
+  const addItem = () => setField('items', [...(form.items || []), { description: '', quantity: 1, rate: 0 }]);
+  const removeItem = i => setField('items', form.items.filter((_, idx) => idx !== i));
+  const updateItem = (i, key, val) => {
+    const items = [...form.items];
+    items[i] = { ...items[i], [key]: val };
+    setField('items', items);
+  };
+
+  const subtotal = (form.items || []).reduce((s, it) => s + (it.quantity || 1) * Number(it.rate || 0), 0);
+  const tax = (subtotal * (form.taxRate || 18)) / 100;
+  const total = subtotal + tax;
+
+  const handleSave = async () => {
+    if (!form.clientName) return alert('Client name is required.');
+    setSaving(true);
+    try {
+      await updateDoc(doc(db, 'invoices', invoice.id), {
+        ...form,
+        subtotal,
+        tax,
+        total,
+        updatedAt: serverTimestamp(),
+      });
+      onSaved({ ...form, id: invoice.id, subtotal, tax, total });
+      onClose();
+    } catch (e) {
+      console.error(e);
+      alert('Error saving: ' + e.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDownload = async () => {
+    const element = document.getElementById('edit-invoice-print');
+    if (!element) return;
+    try {
+      await html2pdf().set({
+        margin:      0.5,
+        filename:    `${form.invoiceNumber || 'Invoice'}.pdf`,
+        image:       { type: 'jpeg', quality: 0.98 },
+        html2canvas: { scale: 2, useCORS: true, allowTaint: true, logging: false },
+        jsPDF:       { unit: 'in', format: 'letter', orientation: 'portrait' },
+      }).from(element).save();
+    } catch (e) {
+      console.error('PDF generation failed:', e);
+      alert('PDF download failed. Please try again.');
+    }
+  };
+
+  // Lock body scroll
+  useEffect(() => {
+    document.body.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = ''; };
+  }, []);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-stretch" style={{ background: 'rgba(2,6,23,0.92)', backdropFilter: 'blur(12px)' }}>
+      <div className="flex flex-col w-full h-full overflow-hidden">
+
+        {/* ── Modal Header ── */}
+        <div className="flex items-center justify-between px-6 py-4 border-b border-white/10 bg-slate-950/80 flex-shrink-0">
+          <div className="flex items-center gap-3">
+            <div className="p-2 bg-indigo-500/15 rounded-xl">
+              <FileEdit size={18} className="text-indigo-400" />
+            </div>
+            <div>
+              <p className="font-bold text-base">Edit Invoice</p>
+              <p className="text-xs text-slate-500 font-mono">{form.invoiceNumber} · {form.clientName}</p>
+            </div>
+          </div>
+
+          {/* Pane toggle (mobile) */}
+          <div className="flex items-center gap-2 lg:hidden">
+            <button onClick={() => setActivePane('edit')}
+              className={`text-xs px-3 py-1.5 rounded-lg font-medium transition-all ${activePane === 'edit' ? 'bg-indigo-600 text-white' : 'bg-white/5 text-slate-400'}`}>
+              Edit
+            </button>
+            <button onClick={() => setActivePane('preview')}
+              className={`text-xs px-3 py-1.5 rounded-lg font-medium transition-all ${activePane === 'preview' ? 'bg-indigo-600 text-white' : 'bg-white/5 text-slate-400'}`}>
+              Preview
+            </button>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button onClick={handleDownload}
+              className="flex items-center gap-1.5 bg-white/5 hover:bg-white/10 border border-white/10 text-white px-4 py-2 rounded-xl text-sm font-medium transition-all">
+              <Download size={14} /> Download PDF
+            </button>
+            <button onClick={handleSave} disabled={saving}
+              className="flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-500 text-white px-5 py-2 rounded-xl text-sm font-semibold transition-all shadow-[0_0_20px_rgba(99,102,241,0.3)] disabled:opacity-60">
+              <Save size={14} /> {saving ? 'Saving…' : 'Save Changes'}
+            </button>
+            <button onClick={onClose} className="p-2 rounded-xl text-slate-500 hover:text-white hover:bg-white/10 transition-all ml-1">
+              <X size={18} />
+            </button>
+          </div>
+        </div>
+
+        {/* ── Two-pane body ── */}
+        <div className="flex flex-1 overflow-hidden">
+
+          {/* LEFT — Edit Form */}
+          <div className={`flex-shrink-0 w-full lg:w-[480px] overflow-y-auto p-6 space-y-6 border-r border-white/8 ${activePane === 'preview' ? 'hidden lg:block' : 'block'}`}
+            style={{ background: 'rgba(8,10,24,0.7)' }}>
+
+            {/* Invoice Meta */}
+            <div>
+              <SectionTitle>Invoice Info</SectionTitle>
+              <div className="grid grid-cols-2 gap-4">
+                <Field label="Invoice #">
+                  <input className={inp} value={form.invoiceNumber || ''} onChange={e => setField('invoiceNumber', e.target.value)} />
+                </Field>
+                <Field label="Project Type">
+                  <select className={inp} value={form.projectType || 'Web Development'} onChange={e => setField('projectType', e.target.value)}>
+                    <option>Web Development</option>
+                    <option>Mobile App</option>
+                    <option>E-Commerce</option>
+                    <option>UI/UX Design</option>
+                    <option>Software Consulting</option>
+                    <option>API Integration</option>
+                    <option>Other</option>
+                  </select>
+                </Field>
+                <Field label="Invoice Date">
+                  <input type="date" className={inp} value={form.invoiceDate || ''} onChange={e => setField('invoiceDate', e.target.value)} />
+                </Field>
+                <Field label="Due Date">
+                  <input type="date" className={inp} value={form.dueDate || ''} onChange={e => setField('dueDate', e.target.value)} />
+                </Field>
+                <Field label="Status">
+                  <select className={inp} value={form.status || 'Draft'} onChange={e => setField('status', e.target.value)}>
+                    <option>Draft</option>
+                    <option>Sent</option>
+                    <option>Pending</option>
+                    <option>Paid</option>
+                  </select>
+                </Field>
+                <Field label="GST/Tax (%)">
+                  <input type="number" className={inp} value={form.taxRate ?? 18} onChange={e => setField('taxRate', Number(e.target.value))} />
+                </Field>
+              </div>
+            </div>
+
+            {/* Client Details */}
+            <div>
+              <SectionTitle>Client Details</SectionTitle>
+              <div className="space-y-3">
+                <Field label="Client Name *">
+                  <input className={inp} value={form.clientName || ''} onChange={e => setField('clientName', e.target.value)} placeholder="Acme Corp" />
+                </Field>
+                <div className="grid grid-cols-2 gap-3">
+                  <Field label="Email">
+                    <input className={inp} value={form.clientEmail || ''} onChange={e => setField('clientEmail', e.target.value)} placeholder="client@example.com" />
+                  </Field>
+                  <Field label="Phone">
+                    <input className={inp} value={form.clientPhone || ''} onChange={e => setField('clientPhone', e.target.value)} placeholder="+91 98765 43210" />
+                  </Field>
+                </div>
+                <Field label="Address">
+                  <textarea rows={2} className={inp + ' resize-none'} value={form.clientAddress || ''} onChange={e => setField('clientAddress', e.target.value)} placeholder="123 Business Street, City" />
+                </Field>
+              </div>
+            </div>
+
+            {/* Line Items */}
+            <div>
+              <SectionTitle>Line Items</SectionTitle>
+              <div className="space-y-3">
+                {(form.items || []).map((item, i) => (
+                  <div key={i} className="flex gap-2 items-end">
+                    <div className="flex-1 space-y-1">
+                      <label className="text-[10px] text-slate-600 uppercase font-bold">Description</label>
+                      <input value={item.description || ''} onChange={e => updateItem(i, 'description', e.target.value)} placeholder="e.g. Homepage Design"
+                        className="w-full bg-slate-900/50 border border-white/10 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-indigo-500 transition-all" />
+                    </div>
+                    <div className="w-14 space-y-1">
+                      <label className="text-[10px] text-slate-600 uppercase font-bold">Qty</label>
+                      <input type="number" min={1} value={item.quantity || 1} onChange={e => updateItem(i, 'quantity', parseInt(e.target.value) || 1)}
+                        className="w-full bg-slate-900/50 border border-white/10 rounded-xl px-2 py-2 text-sm focus:outline-none focus:border-indigo-500 transition-all text-center" />
+                    </div>
+                    <div className="w-24 space-y-1">
+                      <label className="text-[10px] text-slate-600 uppercase font-bold">Rate (₹)</label>
+                      <input type="number" min={0} value={item.rate || 0} onChange={e => updateItem(i, 'rate', e.target.value)}
+                        className="w-full bg-slate-900/50 border border-white/10 rounded-xl px-2 py-2 text-sm focus:outline-none focus:border-indigo-500 transition-all" />
+                    </div>
+                    <div className="w-20 text-right pb-2">
+                      <p className="text-[10px] text-slate-600 uppercase font-bold">Amount</p>
+                      <p className="text-sm font-semibold text-indigo-300">₹{((item.quantity || 1) * Number(item.rate || 0)).toLocaleString('en-IN')}</p>
+                    </div>
+                    <button onClick={() => removeItem(i)} className="pb-2 text-slate-600 hover:text-rose-500 transition-colors">
+                      <Trash2 size={15} />
+                    </button>
+                  </div>
+                ))}
+                <button onClick={addItem} className="w-full flex items-center justify-center gap-2 py-2.5 border-2 border-dashed border-white/10 rounded-xl text-slate-500 hover:text-indigo-400 hover:border-indigo-500/40 transition-all text-sm">
+                  <Plus size={15} /> Add Line Item
+                </button>
+              </div>
+            </div>
+
+            {/* Totals */}
+            <div className="bg-white/4 border border-white/8 rounded-2xl p-5 space-y-2">
+              <div className="flex justify-between text-sm">
+                <span className="text-slate-400">Subtotal</span>
+                <span className="font-medium">₹{subtotal.toLocaleString('en-IN')}</span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-slate-400">GST ({form.taxRate ?? 18}%)</span>
+                <span className="font-medium">₹{tax.toLocaleString('en-IN')}</span>
+              </div>
+              <div className="flex justify-between items-center pt-3 border-t border-white/10">
+                <span className="font-bold">Total</span>
+                <span className="font-black text-xl text-indigo-400">₹{total.toLocaleString('en-IN')}</span>
+              </div>
+            </div>
+
+            {/* Notes */}
+            <div>
+              <SectionTitle>Notes / Payment Terms</SectionTitle>
+              <textarea rows={3} className={inp + ' resize-none'} value={form.notes || ''} onChange={e => setField('notes', e.target.value)} placeholder="Payment is due within 15 days..." />
+            </div>
+          </div>
+
+          {/* RIGHT — Live Preview */}
+          <div className={`flex-1 overflow-y-auto p-6 ${activePane === 'edit' ? 'hidden lg:block' : 'block'}`}
+            style={{ background: 'rgba(4,8,20,0.6)' }}>
+            <div className="flex items-center justify-between mb-4 px-1">
+              <p className="text-sm font-semibold">Live Preview</p>
+              <span className="text-xs text-indigo-400 bg-indigo-500/10 px-2 py-0.5 rounded-lg">Auto-updates as you edit</span>
+            </div>
+
+            {/* Invoice Document */}
+            <div id="edit-invoice-print" className="bg-white text-slate-900 rounded-2xl shadow-2xl overflow-hidden max-w-3xl mx-auto">
+              {/* Header bar */}
+              <div className="bg-indigo-700 px-8 py-6 flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  {company.logoBase64 ? (
+                    <img src={company.logoBase64} alt="Logo" className="w-12 h-12 object-contain bg-white rounded-xl p-1" />
+                  ) : (
+                    <div className="w-9 h-9 bg-white/20 rounded-xl flex items-center justify-center text-white font-black text-lg">
+                      {company.name ? company.name.charAt(0).toUpperCase() : 'V'}
+                    </div>
+                  )}
+                  <div>
+                    <p className="text-white font-bold text-lg leading-tight">{company.name}</p>
+                    {company.gstin && <p className="text-indigo-200 text-[10px] uppercase tracking-widest">GSTIN: {company.gstin}</p>}
+                  </div>
+                </div>
+                <div className="text-right">
+                  <p className="text-indigo-200 text-xs uppercase tracking-widest">Invoice</p>
+                  <p className="text-white font-bold text-base">{form.invoiceNumber}</p>
+                </div>
+              </div>
+
+              <div className="p-8">
+                {/* Meta row */}
+                <div className="grid grid-cols-2 gap-6 mb-8 pb-6 border-b border-slate-100">
+                  <div>
+                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Billed To</p>
+                    <p className="font-bold text-base">{form.clientName || 'Client Name'}</p>
+                    {form.clientEmail && <p className="text-xs text-slate-500">{form.clientEmail}</p>}
+                    {form.clientPhone && <p className="text-xs text-slate-500">{form.clientPhone}</p>}
+                    {form.clientAddress && <p className="text-xs text-slate-500 mt-1 whitespace-pre-wrap">{form.clientAddress}</p>}
+                  </div>
+                  <div className="text-right space-y-1.5">
+                    <div>
+                      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Project</p>
+                      <p className="text-sm font-semibold text-indigo-700">{form.projectType}</p>
+                    </div>
+                    <div>
+                      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Invoice Date</p>
+                      <p className="text-sm">{form.invoiceDate}</p>
+                    </div>
+                    {form.dueDate && (
+                      <div>
+                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Due Date</p>
+                        <p className="text-sm font-semibold text-rose-600">{form.dueDate}</p>
+                      </div>
+                    )}
+                    <div>
+                      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Status</p>
+                      <p className={`text-xs font-bold inline-block px-2 py-0.5 rounded-lg ${
+                        form.status === 'Paid' ? 'bg-emerald-100 text-emerald-700' :
+                        form.status === 'Pending' ? 'bg-amber-100 text-amber-700' :
+                        form.status === 'Sent' ? 'bg-blue-100 text-blue-700' :
+                        'bg-slate-100 text-slate-600'
+                      }`}>{form.status}</p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Items table */}
+                <table className="w-full mb-8 text-sm">
+                  <thead>
+                    <tr className="border-b-2 border-slate-900 text-[10px] font-bold uppercase tracking-wider">
+                      <th className="pb-2 text-left">Description</th>
+                      <th className="pb-2 text-center">Qty</th>
+                      <th className="pb-2 text-right">Rate</th>
+                      <th className="pb-2 text-right">Amount</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {(form.items || []).map((it, i) => (
+                      <tr key={i}>
+                        <td className="py-3 font-medium">{it.description || '—'}</td>
+                        <td className="py-3 text-center text-slate-600">{it.quantity}</td>
+                        <td className="py-3 text-right text-slate-600">₹{Number(it.rate || 0).toLocaleString('en-IN')}</td>
+                        <td className="py-3 text-right font-bold">₹{((it.quantity || 1) * Number(it.rate || 0)).toLocaleString('en-IN')}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+
+                {/* Totals */}
+                <div className="flex justify-end mb-8">
+                  <div className="w-60 space-y-2">
+                    <div className="flex justify-between text-sm">
+                      <span className="text-slate-500">Subtotal</span>
+                      <span className="font-medium">₹{subtotal.toLocaleString('en-IN')}</span>
+                    </div>
+                    <div className="flex justify-between text-sm">
+                      <span className="text-slate-500">GST ({form.taxRate ?? 18}%)</span>
+                      <span className="font-medium">₹{tax.toLocaleString('en-IN')}</span>
+                    </div>
+                    <div className="flex justify-between items-center pt-3 border-t-2 border-slate-900">
+                      <span className="font-bold text-base">Total</span>
+                      <span className="font-black text-xl text-indigo-700">₹{total.toLocaleString('en-IN')}</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Notes */}
+                {form.notes && (
+                  <div className="bg-slate-50 rounded-xl p-4 mb-4">
+                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Notes & Payment Terms</p>
+                    <p className="text-xs text-slate-600">{form.notes}</p>
+                  </div>
+                )}
+
+                {/* Terms */}
+                <div className="bg-slate-50 border border-slate-100 rounded-xl p-4">
+                  <p className="text-[10px] font-bold text-indigo-400 uppercase tracking-wider mb-1.5">Terms & Conditions</p>
+                  <ul className="list-disc pl-4 text-[11px] text-slate-600 space-y-1 font-medium">
+                    <li>Maintenance of the app or website costs as per the features.</li>
+                    <li>Technical issues faced in the app will be fixed for free.</li>
+                    <li>Dedicated customer service and implementation of new ideas are included.</li>
+                  </ul>
+                </div>
+
+                <div className="mt-6 flex items-end justify-between">
+                  <div className="text-[9px] text-slate-400 uppercase tracking-[0.25em] font-bold">
+                    {company.name} · {company.email} · {company.phone}
+                  </div>
+                  <VortiqaaSeal />
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+/* ═══════════════════════════════════════════════════════════════════ */
 const AdminPanel = () => {
   const [tab, setTab]           = useState('overview');
   const [invoices, setInvoices] = useState([]);
@@ -49,6 +449,9 @@ const AdminPanel = () => {
   const [loading, setLoading]   = useState(false);
   const [saving, setSaving]     = useState(false);
   const [showPw, setShowPw]     = useState(false);
+  const [editingInvoice, setEditingInvoice] = useState(null);
+  const [downloadingInvoice, setDownloadingInvoice] = useState(null);
+  const [dlLoading, setDlLoading] = useState(false);
 
   /* Admin-user form */
   const [adminForm, setAdminForm] = useState({
@@ -94,6 +497,26 @@ const AdminPanel = () => {
   }, []);
 
   useEffect(() => { refresh(); }, [refresh]);
+
+  /* ── Download invoice PDF directly from table row ── */
+  useEffect(() => {
+    if (!downloadingInvoice) return;
+    setDlLoading(true);
+    const timer = setTimeout(() => {
+      const el = document.getElementById('admin-dl-invoice');
+      if (!el) { setDownloadingInvoice(null); setDlLoading(false); return; }
+      html2pdf().set({
+        margin:      0.5,
+        filename:    `${downloadingInvoice.invoiceNumber || 'Invoice'}.pdf`,
+        image:       { type: 'jpeg', quality: 0.98 },
+        html2canvas: { scale: 2, useCORS: true, allowTaint: true, logging: false },
+        jsPDF:       { unit: 'in', format: 'letter', orientation: 'portrait' },
+      }).from(el).save()
+        .then(() => { setDownloadingInvoice(null); setDlLoading(false); })
+        .catch(e => { console.error(e); setDownloadingInvoice(null); setDlLoading(false); alert('PDF download failed.'); });
+    }, 250);
+    return () => clearTimeout(timer);
+  }, [downloadingInvoice]);
 
   /* ── Invoice status update ── */
   const updateInvoiceStatus = async (id, status) => {
@@ -190,7 +613,6 @@ const AdminPanel = () => {
             ))}
           </div>
 
-          {/* Recent admin list snippet */}
           {admins.length > 0 && (
             <div className="bg-white/5 border border-white/10 rounded-2xl p-5">
               <p className="font-semibold mb-4">Admin Team ({admins.length})</p>
@@ -215,21 +637,20 @@ const AdminPanel = () => {
       {/* ═══ ADMIN USER MANAGEMENT ═══ */}
       {tab === 'admins' && (
         <div className="grid grid-cols-1 lg:grid-cols-5 gap-7">
-          {/* Add Admin Form */}
           <div className="lg:col-span-2 bg-white/5 border border-white/10 rounded-2xl p-6 space-y-4 self-start">
             <SectionTitle>Add New Admin User</SectionTitle>
             <form onSubmit={handleAddAdmin} className="space-y-4">
               <Field label="Full Name *">
-                <input className={input} value={adminForm.name} onChange={e=>setAF('name',e.target.value)} placeholder="John Doe" required />
+                <input className={inp} value={adminForm.name} onChange={e=>setAF('name',e.target.value)} placeholder="John Doe" required />
               </Field>
               <Field label="Email Address *">
-                <input className={input} type="email" value={adminForm.email} onChange={e=>setAF('email',e.target.value)} placeholder="john@vortiqaa.com" required />
+                <input className={inp} type="email" value={adminForm.email} onChange={e=>setAF('email',e.target.value)} placeholder="john@vortiqaa.com" required />
               </Field>
               <Field label="Phone Number">
-                <input className={input} value={adminForm.phone} onChange={e=>setAF('phone',e.target.value)} placeholder="+91 98765 43210" />
+                <input className={inp} value={adminForm.phone} onChange={e=>setAF('phone',e.target.value)} placeholder="+91 98765 43210" />
               </Field>
               <Field label="Role">
-                <select className={input} value={adminForm.role} onChange={e=>setAF('role',e.target.value)}>
+                <select className={inp} value={adminForm.role} onChange={e=>setAF('role',e.target.value)}>
                   <option>Owner</option>
                   <option>Manager</option>
                   <option>Accountant</option>
@@ -240,7 +661,7 @@ const AdminPanel = () => {
               </Field>
               <Field label="Temporary Password">
                 <div className="relative">
-                  <input className={input + ' pr-10'} type={showPw ? 'text' : 'password'}
+                  <input className={inp + ' pr-10'} type={showPw ? 'text' : 'password'}
                     value={adminForm.password} onChange={e=>setAF('password',e.target.value)} placeholder="••••••••" />
                   <button type="button" onClick={()=>setShowPw(s=>!s)} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300">
                     {showPw ? <EyeOff size={15}/> : <Eye size={15}/>}
@@ -248,7 +669,7 @@ const AdminPanel = () => {
                 </div>
               </Field>
               <Field label="Notes">
-                <textarea className={input + ' resize-none'} rows={2} value={adminForm.notes} onChange={e=>setAF('notes',e.target.value)} placeholder="Optional notes..." />
+                <textarea className={inp + ' resize-none'} rows={2} value={adminForm.notes} onChange={e=>setAF('notes',e.target.value)} placeholder="Optional notes..." />
               </Field>
               <button type="submit" disabled={saving}
                 className="w-full flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white py-3 rounded-xl text-sm font-semibold transition-all shadow-[0_0_15px_rgba(99,102,241,0.3)] disabled:opacity-60">
@@ -258,7 +679,6 @@ const AdminPanel = () => {
             </form>
           </div>
 
-          {/* Admin Users List */}
           <div className="lg:col-span-3 bg-white/5 border border-white/10 rounded-2xl overflow-hidden self-start">
             <div className="p-5 border-b border-white/5">
               <p className="font-semibold">Admin Users ({admins.length})</p>
@@ -295,8 +715,9 @@ const AdminPanel = () => {
       {/* ═══ INVOICES ═══ */}
       {tab === 'invoices' && (
         <div className="bg-white/5 border border-white/10 rounded-2xl overflow-hidden">
-          <div className="p-5 border-b border-white/5">
+          <div className="p-5 border-b border-white/5 flex items-center justify-between">
             <p className="font-semibold">All Invoices ({invoices.length})</p>
+            <p className="text-xs text-slate-500">Click <FileEdit size={11} className="inline" /> to edit any invoice</p>
           </div>
           {loading ? (
             <p className="p-8 text-center text-slate-500 text-sm">Loading...</p>
@@ -314,7 +735,7 @@ const AdminPanel = () => {
                 </thead>
                 <tbody className="divide-y divide-white/5">
                   {invoices.map(inv => (
-                    <tr key={inv.id} className="hover:bg-white/3 transition-colors">
+                    <tr key={inv.id} className="hover:bg-white/3 transition-colors group">
                       <td className="px-5 py-3.5 font-mono text-indigo-400 text-xs whitespace-nowrap">{inv.invoiceNumber}</td>
                       <td className="px-5 py-3.5 font-medium whitespace-nowrap">{inv.clientName}</td>
                       <td className="px-5 py-3.5 text-slate-400 whitespace-nowrap">{inv.projectType}</td>
@@ -326,9 +747,24 @@ const AdminPanel = () => {
                         </select>
                       </td>
                       <td className="px-5 py-3.5">
-                        <button onClick={del('invoices',inv.id,setInvoices)} className="text-slate-600 hover:text-rose-400 transition-colors">
-                          <Trash2 size={15}/>
-                        </button>
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => setEditingInvoice(inv)}
+                            title="Edit Invoice"
+                            className="flex items-center gap-1 text-slate-500 hover:text-indigo-400 hover:bg-indigo-500/10 px-2 py-1 rounded-lg transition-all text-xs font-medium">
+                            <FileEdit size={14}/> Edit
+                          </button>
+                          <button
+                            onClick={() => !dlLoading && setDownloadingInvoice(inv)}
+                            title="Download PDF"
+                            disabled={dlLoading && downloadingInvoice?.id === inv.id}
+                            className="flex items-center gap-1 text-slate-500 hover:text-emerald-400 hover:bg-emerald-500/10 px-2 py-1 rounded-lg transition-all text-xs font-medium disabled:opacity-50">
+                            <Download size={14}/> {dlLoading && downloadingInvoice?.id === inv.id ? '…' : 'PDF'}
+                          </button>
+                          <button onClick={del('invoices',inv.id,setInvoices)} className="text-slate-600 hover:text-rose-400 transition-colors p-1">
+                            <Trash2 size={14}/>
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -400,11 +836,11 @@ const AdminPanel = () => {
               {label:'GSTIN',         key:'gstin'},
             ].map(({label,key})=>(
               <Field key={key} label={label}>
-                <input className={input} value={company[key]} onChange={e=>setC(key,e.target.value)} />
+                <input className={inp} value={company[key]} onChange={e=>setC(key,e.target.value)} />
               </Field>
             ))}
             <Field label="Registered Address">
-              <textarea className={input+' resize-none'} rows={2} value={company.address} onChange={e=>setC('address',e.target.value)} />
+              <textarea className={inp+' resize-none'} rows={2} value={company.address} onChange={e=>setC('address',e.target.value)} />
             </Field>
           </div>
 
@@ -417,7 +853,7 @@ const AdminPanel = () => {
               {label:'UPI ID',         key:'upiId'},
             ].map(({label,key})=>(
               <Field key={key} label={label}>
-                <input className={input} value={company[key]} onChange={e=>setC(key,e.target.value)} />
+                <input className={inp} value={company[key]} onChange={e=>setC(key,e.target.value)} />
               </Field>
             ))}
 
@@ -440,6 +876,114 @@ const AdminPanel = () => {
             </button>
           </div>
         </div>
+      )}
+
+      {/* ═══ HIDDEN INVOICE RENDER FOR DIRECT PDF DOWNLOAD ═══ */}
+      {downloadingInvoice && (() => {
+        const inv = downloadingInvoice;
+        const items = inv.items || [];
+        const sub = items.reduce((s, it) => s + (it.quantity || 1) * Number(it.rate || 0), 0);
+        const tx  = (sub * (inv.taxRate ?? 18)) / 100;
+        const tot = sub + tx;
+        return (
+          <div style={{ position: 'fixed', left: '-9999px', top: 0, width: '850px', zIndex: -1 }}>
+            <div id="admin-dl-invoice" className="bg-white text-slate-900 overflow-hidden">
+              {/* Header */}
+              <div className="bg-indigo-700 px-8 py-6 flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  {company.logoBase64
+                    ? <img src={company.logoBase64} alt="Logo" className="w-12 h-12 object-contain bg-white rounded-xl p-1"/>
+                    : <div className="w-9 h-9 bg-white/20 rounded-xl flex items-center justify-center text-white font-black text-lg">{company.name ? company.name.charAt(0) : 'V'}</div>}
+                  <div>
+                    <p className="text-white font-bold text-lg leading-tight">{company.name}</p>
+                    {company.gstin && <p className="text-indigo-200 text-[10px] uppercase tracking-widest">GSTIN: {company.gstin}</p>}
+                  </div>
+                </div>
+                <div className="text-right">
+                  <p className="text-indigo-200 text-xs uppercase tracking-widest">Invoice</p>
+                  <p className="text-white font-bold text-base">{inv.invoiceNumber}</p>
+                </div>
+              </div>
+              <div className="p-8">
+                {/* Billed To / Meta */}
+                <div className="grid grid-cols-2 gap-6 mb-8 pb-6 border-b border-slate-100">
+                  <div>
+                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Billed To</p>
+                    <p className="font-bold text-base">{inv.clientName}</p>
+                    {inv.clientEmail && <p className="text-xs text-slate-500">{inv.clientEmail}</p>}
+                    {inv.clientPhone && <p className="text-xs text-slate-500">{inv.clientPhone}</p>}
+                    {inv.clientAddress && <p className="text-xs text-slate-500 mt-1 whitespace-pre-wrap">{inv.clientAddress}</p>}
+                  </div>
+                  <div className="text-right space-y-1.5">
+                    <div><p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Project</p><p className="text-sm font-semibold text-indigo-700">{inv.projectType}</p></div>
+                    <div><p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Invoice Date</p><p className="text-sm">{inv.invoiceDate}</p></div>
+                    {inv.dueDate && <div><p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Due Date</p><p className="text-sm font-semibold text-rose-600">{inv.dueDate}</p></div>}
+                  </div>
+                </div>
+                {/* Items Table */}
+                <table className="w-full mb-8 text-sm">
+                  <thead>
+                    <tr className="border-b-2 border-slate-900 text-[10px] font-bold uppercase tracking-wider">
+                      <th className="pb-2 text-left">Description</th>
+                      <th className="pb-2 text-center">Qty</th>
+                      <th className="pb-2 text-right">Rate</th>
+                      <th className="pb-2 text-right">Amount</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {items.map((it, i) => (
+                      <tr key={i}>
+                        <td className="py-3 font-medium">{it.description || '—'}</td>
+                        <td className="py-3 text-center text-slate-600">{it.quantity}</td>
+                        <td className="py-3 text-right text-slate-600">₹{Number(it.rate || 0).toLocaleString('en-IN')}</td>
+                        <td className="py-3 text-right font-bold">₹{((it.quantity || 1) * Number(it.rate || 0)).toLocaleString('en-IN')}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                {/* Totals */}
+                <div className="flex justify-end mb-8">
+                  <div className="w-60 space-y-2">
+                    <div className="flex justify-between text-sm"><span className="text-slate-500">Subtotal</span><span className="font-medium">₹{sub.toLocaleString('en-IN')}</span></div>
+                    <div className="flex justify-between text-sm"><span className="text-slate-500">GST ({inv.taxRate ?? 18}%)</span><span className="font-medium">₹{tx.toLocaleString('en-IN')}</span></div>
+                    <div className="flex justify-between items-center pt-3 border-t-2 border-slate-900"><span className="font-bold text-base">Total</span><span className="font-black text-xl text-indigo-700">₹{tot.toLocaleString('en-IN')}</span></div>
+                  </div>
+                </div>
+                {inv.notes && (
+                  <div className="bg-slate-50 rounded-xl p-4 mb-4">
+                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Notes & Payment Terms</p>
+                    <p className="text-xs text-slate-600">{inv.notes}</p>
+                  </div>
+                )}
+                <div className="bg-slate-50 border border-slate-100 rounded-xl p-4 mb-6">
+                  <p className="text-[10px] font-bold text-indigo-400 uppercase tracking-wider mb-1.5">Terms & Conditions</p>
+                  <ul className="list-disc pl-4 text-[11px] text-slate-600 space-y-1 font-medium">
+                    <li>Maintenance of the app or website costs as per the features.</li>
+                    <li>Technical issues faced in the app will be fixed for free.</li>
+                    <li>Dedicated customer service and implementation of new ideas are included.</li>
+                  </ul>
+                </div>
+                {/* Footer + Seal */}
+                <div className="flex items-end justify-between mt-2">
+                  <p className="text-[9px] text-slate-400 uppercase tracking-[0.25em] font-bold">{company.name} · {company.email} · {company.phone}</p>
+                  <VortiqaaSeal />
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* ═══ INVOICE EDIT MODAL ═══ */}
+      {editingInvoice && (
+        <InvoiceEditModal
+          invoice={editingInvoice}
+          company={company}
+          onClose={() => setEditingInvoice(null)}
+          onSaved={(updated) => {
+            setInvoices(list => list.map(i => i.id === updated.id ? updated : i));
+          }}
+        />
       )}
     </div>
   );

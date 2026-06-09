@@ -6,6 +6,29 @@ import html2pdf from 'html2pdf.js';
 
 const TAX_RATE = 18; // GST %
 
+/* ── Vortiqaa Official Seal ── */
+const VortiqaaSeal = () => (
+  <svg width="88" height="88" viewBox="0 0 88 88" xmlns="http://www.w3.org/2000/svg">
+    <circle cx="44" cy="44" r="41" fill="none" stroke="#4338ca" strokeWidth="2"/>
+    <circle cx="44" cy="44" r="35" fill="none" stroke="#4338ca" strokeWidth="0.75"/>
+    <circle cx="44" cy="44" r="26" fill="none" stroke="#4338ca" strokeWidth="0.75" strokeDasharray="2 2"/>
+    {[...Array(24)].map((_, i) => {
+      const a = (i / 24) * 2 * Math.PI;
+      const big = i % 6 === 0;
+      return (
+        <line key={i}
+          x1={44 + (big ? 35.5 : 36.5) * Math.cos(a)} y1={44 + (big ? 35.5 : 36.5) * Math.sin(a)}
+          x2={44 + (big ? 40.5 : 39.5) * Math.cos(a)} y2={44 + (big ? 40.5 : 39.5) * Math.sin(a)}
+          stroke="#4338ca" strokeWidth={big ? 2 : 1}/>
+      );
+    })}
+    <text x="44" y="30" textAnchor="middle" fill="#4338ca" fontSize="6.5" fontWeight="700" fontFamily="Arial,sans-serif" letterSpacing="1.5">VORTIQAA</text>
+    <text x="44" y="38" textAnchor="middle" fill="#4338ca" fontSize="5.8" fontWeight="600" fontFamily="Arial,sans-serif" letterSpacing="0.5">TECHNOLOGIES</text>
+    <text x="44" y="55" textAnchor="middle" fill="#4338ca" fontSize="20" fontWeight="900" fontFamily="Arial,sans-serif">V</text>
+    <text x="44" y="65" textAnchor="middle" fill="#4338ca" fontSize="5.8" fontWeight="700" fontFamily="Arial,sans-serif" letterSpacing="3">VERIFIED</text>
+  </svg>
+);
+
 const InvoiceGenerator = () => {
   const [saving, setSaving] = useState(false);
   const [savedId, setSavedId] = useState(null);
@@ -75,16 +98,21 @@ const InvoiceGenerator = () => {
 
   const handlePrint = () => window.print();
 
-  const handleDownload = () => {
+  const handleDownload = async () => {
     const element = document.getElementById('invoice-print');
-    const opt = {
-      margin:       0.5,
-      filename:     `${form.invoiceNumber || 'Invoice'}.pdf`,
-      image:        { type: 'jpeg', quality: 0.98 },
-      html2canvas:  { scale: 2 },
-      jsPDF:        { unit: 'in', format: 'letter', orientation: 'portrait' }
-    };
-    html2pdf().set(opt).from(element).save();
+    if (!element) return alert('Invoice preview not found.');
+    try {
+      await html2pdf().set({
+        margin:      0.5,
+        filename:    `${form.invoiceNumber || 'Invoice'}.pdf`,
+        image:       { type: 'jpeg', quality: 0.98 },
+        html2canvas: { scale: 2, useCORS: true, allowTaint: true, logging: false },
+        jsPDF:       { unit: 'in', format: 'letter', orientation: 'portrait' },
+      }).from(element).save();
+    } catch (e) {
+      console.error('PDF generation failed:', e);
+      alert('PDF download failed. Please try the Print button instead.');
+    }
   };
 
   return (
@@ -343,8 +371,11 @@ const InvoiceGenerator = () => {
                 </ul>
               </div>
 
-              <div className="mt-8 text-center text-[9px] text-slate-400 uppercase tracking-[0.25em] font-bold">
-                {company.name} · {company.email} · {company.phone}
+              <div className="mt-6 flex items-end justify-between">
+                <div className="text-[9px] text-slate-400 uppercase tracking-[0.25em] font-bold">
+                  {company.name} · {company.email} · {company.phone}
+                </div>
+                <VortiqaaSeal />
               </div>
             </div>
           </div>
